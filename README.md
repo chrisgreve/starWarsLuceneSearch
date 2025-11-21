@@ -9,7 +9,7 @@ This is a project that uses the Lucene API to search for a phrase in content ins
 
 ## Documentation
 
-Dependencies are downloaded using Maven from [here]([https://linktodocumentation](https://repo.maven.apache.org/maven2/))
+Dependencies are downloaded using Maven from [here](https://repo.maven.apache.org/maven2/)
 - Can be found in [pom.xml](pom.xml)
 - Packages used for this project:
   - [json-simple](https://mvnrepository.com/artifact/com.googlecode.json-simple/json-simple) for parsing json files into objects
