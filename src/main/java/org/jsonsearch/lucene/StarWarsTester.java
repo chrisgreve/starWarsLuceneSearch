@@ -18,7 +18,7 @@ public class StarWarsTester {
         // Indexing
         tester.createIndex(); // comment out when index is properly created
         String phrase = "hyper space"; // search phrase
-
+        System.out.println("Phrase: \"" + phrase + "\"");
         // Searching
         TopDocs hits = tester.phoneticSearch(phrase);
         // here we can perform analysis on hits found
