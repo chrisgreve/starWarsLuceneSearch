@@ -3,6 +3,7 @@ package org.jsonsearch.lucene;
 import org.apache.lucene.search.*;
 import org.json.simple.parser.ParseException;
 import java.io.IOException;
+import java.util.Scanner;
 
 // Here we perform example tests on StarWards JSON files for indexing, querying, and searching
 public class StarWarsTester {
@@ -15,15 +16,39 @@ public class StarWarsTester {
     public static void main(String[] args) throws IOException, ParseException {
         StarWarsTester tester = new StarWarsTester();
 
+        // Scanner for user input
+        Scanner sc = new Scanner(System.in);
+
         // Indexing
-        tester.createIndex(); // comment out when index is properly created
-        String phrase = "hyper space"; // search phrase
-        System.out.println("Phrase: \"" + phrase + "\"");
+        System.out.println("Would you like to index search files? (Yes/No)");
+        if(sc.nextLine().equals("Yes")) {
+            // ask user to define which files to look for
+            System.out.println("Please enter filepath for search files (default= \"src/main/resources\")");
+            String dataPath = sc.nextLine();
+            tester.setDataDir(dataPath);
+            // ask user to define where to store index for search purposes
+            System.out.println("Please enter filepath to store index: (default= \"src/test/index\")");
+            String indexPath = sc.nextLine();
+            tester.setIndexDir(indexPath);
+            // create index here
+            tester.createIndex();
+        }
+
         // Searching
+        System.out.println("Please enter the phrase to search (e.g. \"hyper space\"): ");
+        String phrase = sc.nextLine(); // search phrase
+        System.out.println("Searching for phrase: \"" + phrase + "\" found in procedures...");
         TopDocs hits = tester.phoneticSearch(phrase);
         // here we can perform analysis on hits found
 
     }
+    public void setDataDir(String path) {
+         dataDir = path;
+    }
+    public void setIndexDir(String path) {
+        indexDir = path;
+    }
+
     // Calls Indexer to process JSON files from indexDir into lucene indexes in dataDir
     public void createIndex() throws IOException, ParseException {
         indexer = new Indexer(indexDir);
