@@ -100,7 +100,7 @@ public class PhoneticSearcher {
     }
 
     // This method creates what we are mainly using for searches right now
-    public BooleanQuery createBooleanQuery(String phrase) throws IOException {
+    public BooleanQuery createBooleanQuery(String phrase, boolean isPhoneticSearch) throws IOException {
         BooleanQuery.Builder booleanQueryBuilder = new BooleanQuery.Builder();
 
         // Create Option Queries to add to Boolean query
@@ -108,7 +108,13 @@ public class PhoneticSearcher {
         WildcardQuery wildcardQuery = createWildcardQuery(phrase);
         PrefixQuery prefixQuery = createPrefixQuery(phrase);
         TermQuery termQuery = createBasicQuery(phrase);
-        PhraseQuery phraseQuery = createPhraseQuery(phrase);
+        PhraseQuery phraseQuery;
+        if(!isPhoneticSearch){
+            phraseQuery = createExactPhraseQuery(phrase);
+        }
+        else{
+            phraseQuery =  createPhoneticPhraseQuery(phrase);
+        }
 
         // Add Queries to BooleanQuery using SHOULD = OR logic (phrase should match)
         booleanQueryBuilder.add(fuzzyQuery, BooleanClause.Occur.SHOULD);
@@ -127,7 +133,23 @@ public class PhoneticSearcher {
         return new TermQuery(t);
     }
 
-    public PhraseQuery createPhraseQuery(String phrase) throws IOException {
+    public PhraseQuery createExactPhraseQuery(String phrase) throws IOException {
+        PhraseQuery.Builder builder = new PhraseQuery.Builder();
+        TokenStream tokenStream = standardAnalyzer.tokenStream(
+                LuceneConstants.CONTENTS, new StringReader(phrase));
+        CharTermAttribute term = tokenStream.addAttribute(CharTermAttribute.class);
+        tokenStream.reset();
+        while(tokenStream.incrementToken()) {
+            builder.add(new Term(LuceneConstants.CONTENTS, term.toString()));
+            System.out.print("[" + term.toString() + "] ");
+        }
+        System.out.println();
+        standardAnalyzer.close();
+        builder.setSlop(2);
+        PhraseQuery phraseQuery = builder.build();
+        return phraseQuery;
+    }
+    public PhraseQuery createPhoneticPhraseQuery(String phrase) throws IOException {
         PhraseQuery.Builder builder = new PhraseQuery.Builder();
         TokenStream tokenStream = phoneticAnalyzer.tokenStream(
                 LuceneConstants.CONTENTS, new StringReader(phrase));
