@@ -15,6 +15,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Paths;
 import java.util.Scanner;
+import java.util.Set;
 
 
 // Here we perform example tests on StarWards JSON files for indexing, querying, and searching
@@ -23,8 +24,9 @@ public class StarWarsTester {
     String indexExactWordDir = "src/test/indexExactWord";
     String dataDir = "src/main/resources";
     Indexer indexer;
-    TopDocs phoneticHits;
-    TopDocs exactWordHits;
+    static TopDocs phoneticHits;
+    static TopDocs exactWordHits;
+    PhoneticSearcher searcherExact;
 
     public static void main(String[] args) throws IOException, ParseException {
         StarWarsTester tester = new StarWarsTester();
@@ -64,21 +66,25 @@ public class StarWarsTester {
         int numSuggestions = 5;
         String[] suggestions = spellChecker.suggestSimilar(phrase, numSuggestions);
         if (suggestions != null && suggestions.length > 0 && !spellChecker.exist(phrase)) { // only give suggestion when search word DNE
-            System.out.println("Did you mean: " + suggestions[0] + " (y/n)?");
+            System.out.println("Did you mean: " + suggestions[0] + " (y/n)?");  // only offer one suggestion
             if(sc.nextLine().equals("y")) {
                 phrase = suggestions[0];
             }
-        } else {
-            System.out.println("No suggestions found.");
         }
         spellChecker.close();
         System.out.println("Searching for phrase: \"" + phrase + "\" found in procedures...");
-        TopDocs exactWords1 = tester.exactWordSearch(phrase);
-        TopDocs phoneticHits = tester.phoneticSearch(phrase);
+        Set<String> exactProcedures = tester.exactWordSearch(phrase);
+        Set<String> phoneticProcedures = tester.phoneticSearch(phrase);
         // TODO: here we can perform analysis on scores
+        if(exactWordHits.totalHits.value() + phoneticHits.totalHits.value() >= 1) {
+            System.out.print(exactWordHits.totalHits.value() + " exact matches found. ");
+            System.out.println("  in procedures: " + exactProcedures);
+            System.out.print(phoneticHits.totalHits.value() + " similarities found. ");
+            System.out.println("  in procedures: " + phoneticProcedures);
+
+        }
 
     }
-
     public void setDataDir(String path) {
          dataDir = path;
     }
@@ -121,39 +127,30 @@ public class StarWarsTester {
 
 
     // Creates query based on phrase and prints how many hits found; returns TopDocs found
-    public TopDocs exactWordSearch(String phrase) throws IOException {
+    public Set<String> exactWordSearch(String phrase) throws IOException {
         long startTime = System.currentTimeMillis();
-        PhoneticSearcher searcher = new PhoneticSearcher(indexExactWordDir);
-        Query query = searcher.createBooleanQuery(phrase); // here we can choose what type of Query to create
-        exactWordHits = searcher.search(query);
+        PhoneticSearcher searcherExact = new PhoneticSearcher(indexExactWordDir);
+        Query query = searcherExact.createBooleanQuery(phrase, false); // here we can choose what type of Query to create
+        exactWordHits = searcherExact.search(query);
         long endTime = System.currentTimeMillis();
-
-        // output
-        if(exactWordHits.totalHits.value() >= 1){
-            System.out.print(exactWordHits.totalHits.value() + "exact matches found. ");
-            System.out.println("Found procedures: " + searcher.getProcedures(exactWordHits));
-        }
 
         System.out.println("Searching took " + (endTime - startTime) + " ms");
 
-
-        return exactWordHits;
+        return searcherExact.getProcedures(exactWordHits);
     }
 
     // Creates query based on phonetics of a phrase and prints how many hits found; returns TopDocs found
-    public TopDocs phoneticSearch(String phrase) throws IOException {
+    public Set<String> phoneticSearch(String phrase) throws IOException {
         long startTime = System.currentTimeMillis();
         PhoneticSearcher searcher = new PhoneticSearcher(indexPhoneticDir);
-        Query query = searcher.createBooleanQuery(phrase); // herre we can choose what type of Query to create
+        Query query = searcher.createBooleanQuery(phrase, true); // herre we can choose what type of Query to create
         phoneticHits = searcher.search(query);
         long endTime = System.currentTimeMillis();
 
-        // output
-        System.out.print(phoneticHits.totalHits.value() + " similarities found. ");
         System.out.println("Searching took " + (endTime - startTime) + " ms");
-        System.out.println("Found procedures: " + searcher.getProcedures(phoneticHits));
 
-        return phoneticHits;
+
+        return searcher.getProcedures(phoneticHits);
     }
 
 
