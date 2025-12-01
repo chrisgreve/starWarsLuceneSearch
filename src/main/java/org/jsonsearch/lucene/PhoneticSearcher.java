@@ -17,7 +17,7 @@ import java.nio.file.Paths;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
-// This is a phrase searcher class that look for results both exact and similar in phonetics
+// This is the main searcher class that look for results both exact and similar in phonetics
 public class PhoneticSearcher {
     IndexSearcher indexSearcher;
     QueryBuilder queryBuilder;
@@ -34,7 +34,11 @@ public class PhoneticSearcher {
 
     public TopDocs search(Query query) throws IOException {
         TopDocs hits = indexSearcher.search(query, LuceneConstants.MAX_SEARCH);
-        System.out.println("Found procedures: " + getProcedures(hits));
+        int numHits = (int) hits.totalHits.value();
+        if(numHits < LuceneConstants.MIN_OCCUR) {
+            System.out.println("No significant hits found (Min occur must be > " +  LuceneConstants.MIN_OCCUR + ")");
+        }
+
         return hits;
     }
 
@@ -119,7 +123,7 @@ public class PhoneticSearcher {
 //  Below we implement methods to create different types of queries used in boolean query for refining searches
 
     public TermQuery createBasicQuery(String phrase) throws IOException {
-        Term t = new Term(LuceneConstants.CONTENTS, getPhoneticTerm(phrase));
+        Term t = new Term(LuceneConstants.CONTENTS, phrase);
         return new TermQuery(t);
     }
 
