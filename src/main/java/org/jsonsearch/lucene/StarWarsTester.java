@@ -24,7 +24,7 @@ public class StarWarsTester {
     String dataDir = "src/main/resources";
     Indexer indexer;
     TopDocs phoneticHits;
-//    TopDocs basicHits;
+    TopDocs exactWordHits;
 
     public static void main(String[] args) throws IOException, ParseException {
         StarWarsTester tester = new StarWarsTester();
@@ -64,7 +64,7 @@ public class StarWarsTester {
         spellChecker.indexDictionary(new LuceneDictionary(indexReader, LuceneConstants.CONTENTS), new IndexWriterConfig(standardAnalyzer), true);
         int numSuggestions = 5;
         String[] suggestions = spellChecker.suggestSimilar(phrase, numSuggestions);
-        if (suggestions != null && suggestions.length > 0) {
+        if (suggestions != null && suggestions.length > 0 && !spellChecker.exist(phrase)) { // only give suggestion when search word DNE
             System.out.println("Did you mean: " + suggestions[0] + " (y/n)?");
             if(sc.nextLine().equals("y")) {
                 phrase = suggestions[0];
@@ -74,8 +74,9 @@ public class StarWarsTester {
         }
         spellChecker.close();
         System.out.println("Searching for phrase: \"" + phrase + "\" found in procedures...");
-        TopDocs hits = tester.phoneticSearch(phrase);
-        // here we can perform analysis on hits found
+        TopDocs exactWords1 = tester.exactWordSearch(phrase);
+        TopDocs phoneticHits = tester.phoneticSearch(phrase);
+        // TODO: here we can perform analysis on hits found
 
     }
 
@@ -119,37 +120,43 @@ public class StarWarsTester {
         System.out.println("Indexing took " + (endTime - startTime) + " ms");
     }
 
+
     // Creates query based on phrase and prints how many hits found; returns TopDocs found
-    public TopDocs phoneticSearch(String phrase) throws IOException {
-        PhoneticSearcher searcher = new PhoneticSearcher(indexPhoneticDir);
+    public TopDocs exactWordSearch(String phrase) throws IOException {
         long startTime = System.currentTimeMillis();
+        PhoneticSearcher searcher = new PhoneticSearcher(indexExactWordDir);
+        Query query = searcher.createBooleanQuery(phrase); // here we can choose what type of Query to create
+        exactWordHits = searcher.search(query);
+        long endTime = System.currentTimeMillis();
+
+        // output
+        if(exactWordHits.totalHits.value() >= 1){
+            System.out.print(exactWordHits.totalHits.value() + "exact matches found. ");
+            System.out.println("Found procedures: " + searcher.getProcedures(exactWordHits));
+        }
+
+        System.out.println("Searching took " + (endTime - startTime) + " ms");
+
+
+        return exactWordHits;
+    }
+
+    // Creates query based on phonetics of a phrase and prints how many hits found; returns TopDocs found
+    public TopDocs phoneticSearch(String phrase) throws IOException {
+        long startTime = System.currentTimeMillis();
+        PhoneticSearcher searcher = new PhoneticSearcher(indexPhoneticDir);
         Query query = searcher.createBooleanQuery(phrase); // herre we can choose what type of Query to create
         phoneticHits = searcher.search(query);
         long endTime = System.currentTimeMillis();
-        int numHits = (int) phoneticHits.totalHits.value();
-        if(numHits < LuceneConstants.MIN_OCCUR) {
-            System.out.println("No significant hits found (Min occur must be > " +  LuceneConstants.MIN_OCCUR + ")");
-            return null;
-        }
-        System.out.println(phoneticHits.totalHits + " found. Time: " + (endTime - startTime) + " ms");
+
+        // output
+        System.out.print(phoneticHits.totalHits.value() + " similarities found. ");
+        System.out.println("Searching took " + (endTime - startTime) + " ms");
+        System.out.println("Found procedures: " + searcher.getProcedures(phoneticHits));
+
         return phoneticHits;
     }
 
-    // For searching without phonetics
-//        public TopDocs search(String phrase) throws IOException {
-//            Searcher searcher = new Searcher(indexDir);
-//            long startTime = System.currentTimeMillis();
-//            System.out.println("Searching for phrase: " + phrase);
-//            Query query = searcher.createWildCardPhraseQuery(phrase);
-//            basicHits = searcher.search(query);
-//            long endTime = System.currentTimeMillis();
-//            int numHits = (int) basicHits.totalHits.value();
-//            if(numHits < LuceneConstants.MIN_OCCUR) {
-//                System.out.println("No significant hits found (Min occur must be > " +  LuceneConstants.MIN_OCCUR + ")");
-//                return null;
-//            }
-//            System.out.println(basicHits.totalHits + " found. Time: " + (endTime - startTime) + " ms");
-//            return basicHits;
-//        }
+
 
 }
