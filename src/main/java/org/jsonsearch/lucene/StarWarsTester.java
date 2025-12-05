@@ -14,9 +14,8 @@ import org.json.simple.parser.ParseException;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Paths;
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.Scanner;
+import java.util.*;
+import java.util.stream.Collectors;
 
 import static org.jsonsearch.lucene.Searcher.printSeparator;
 
@@ -75,11 +74,9 @@ public class StarWarsTester {
         String[] suggestions = spellChecker.suggestSimilar(phrase, numSuggestions);
 
 
-
-        // Process results
+     // Process results
 
         System.out.println("Top results for phrase: \"" + phrase + "\"");
-
 
          // Results for exact search phrase
          LinkedHashMap<String, Double> exactResults = tester.exactWordSearch(phrase);
@@ -105,10 +102,6 @@ public class StarWarsTester {
 
          // When search phrase is not found, this checks for fuzzy and wildcards for search phrase without using a query
          if (suggestions != null && suggestions.length > 0 && !spellChecker.exist(phrase)) { // only give suggestion when search word DNE
-//            System.out.println("Did you mean: " + suggestions[0] + " (y/n)?");  // only offer one suggestion
-//            if(sc.nextLine().equals("y")) {
-//                phrase = suggestions[0];
-//            }
              System.out.println("Here are some suggestion searches:");
              for (int i =0; i < suggestions.length; i++) {
 
@@ -129,7 +122,7 @@ public class StarWarsTester {
          }
 
          // print final
-
+         finalResults = (LinkedHashMap<String, Double>) tester.sortByValue(finalResults); // sort bookmarks by score
          System.out.println("FINAL BOOKMARK TAGS w/ SCORES: " + finalResults);
 
          spellChecker.close();
@@ -223,6 +216,8 @@ public class StarWarsTester {
         return searcher.getBookmarks(phoneticHits);
     }
 
+//Methods for map organization
+
     // To combine results into a single map
     private void merge(LinkedHashMap<String, Double> map1, LinkedHashMap<String, Double> map2) {
         for (Map.Entry<String, Double> entry : map2.entrySet()) {
@@ -236,5 +231,25 @@ public class StarWarsTester {
             }
         }
     }
+
+    // Sorts bookmap:score map from highest score to lowest
+    private Map<String, Double> sortByValue(LinkedHashMap<String, Double> map) {
+        List<Map.Entry<String, Double>> entries =
+                new ArrayList<Map.Entry<String, Double>>(map.entrySet());
+        Collections.sort(entries, new Comparator<Map.Entry<String, Double>>() {
+            public int compare(Map.Entry<String, Double> a, Map.Entry<String, Double> b){
+                return b.getValue().compareTo(a.getValue());
+            }
+        });
+        Map<String, Double> sortedMap = new LinkedHashMap<String, Double>();
+        for (Map.Entry<String, Double> entry : entries) {
+            sortedMap.put(entry.getKey(), entry.getValue());
+        }
+       return sortedMap;
+
+
+    }
+
+
 
 }
