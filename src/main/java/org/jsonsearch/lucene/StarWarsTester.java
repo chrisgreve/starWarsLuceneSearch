@@ -28,7 +28,7 @@ public class StarWarsTester {
     String dataDir = "src/main/resources"; //default TODO: test with difference dir
     Indexer indexer;
 
-    static void main() throws IOException, ParseException {
+    public static void main(String[] args) throws IOException, ParseException {
         StarWarsTester tester = new StarWarsTester();
 
         // Scanner for user input
