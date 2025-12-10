@@ -36,20 +36,20 @@ public class StarWarsTester {
 
         // Indexing
         System.out.println("Would you like to index search files? (y/n)");
-        if (sc.nextLine().equals("y")) {
+        if (sc.nextLine().trim().equalsIgnoreCase("y")) {
             // ask user to define which files to look for
             System.out.println("Please enter filepath for search files (default= \"src/main/resources\")");
-            String dataPath = sc.nextLine();
-            tester.setDataDir(dataPath);
+            String dataPath = sc.nextLine().trim();
+            if (!dataPath.isEmpty()) tester.setDataDir(dataPath);
 
             // ask user to define where to store exact content index for search purposes
             System.out.println("Please enter filepath to store exact match index: (default= \"src/test/indexExactWord\")");
-            String indexExactPath = sc.nextLine();
-            tester.setExactWordIndexDir(indexExactPath);
+            String indexExactPath = sc.nextLine().trim();
+            if (!indexExactPath.isEmpty()) tester.setExactWordIndexDir(indexExactPath);
             // ask user to define where to store phonetic index for search purposes
             System.out.println("Please enter filepath to store phonetic index: (default= \"src/test/indexPhonetic\")");
-            String indexPhoneticPath = sc.nextLine();
-            tester.setPhoneticIndexDir(indexPhoneticPath);
+            String indexPhoneticPath = sc.nextLine().trim();
+            if (!indexPhoneticPath.isEmpty()) tester.setPhoneticIndexDir(indexPhoneticPath);
 
             // create index here
             tester.createPhoneticIndex();
@@ -61,69 +61,64 @@ public class StarWarsTester {
         System.out.println("Please enter the phrase to search (e.g. \"hyper space\"): ");
         String phrase = sc.nextLine(); // search phrase
 
-        // Spellchecker: create a SpellChecker instance
-        File spellIndexFile = new File("src/test/dictionaryIndex");
-        Directory spellIndexDir = FSDirectory.open(spellIndexFile.toPath());
-        SpellChecker spellChecker = new SpellChecker(spellIndexDir);
-        // populate spell-check index
-        Directory mainIndexDir = FSDirectory.open(Paths.get(tester.getExactIndexDir()));
-        IndexReader indexReader = DirectoryReader.open(mainIndexDir);
-        StandardAnalyzer standardAnalyzer = new StandardAnalyzer();
-        spellChecker.indexDictionary(new LuceneDictionary(indexReader, LuceneConstants.CONTENTS), new IndexWriterConfig(standardAnalyzer), true);
-        int numSuggestions = 5;
-        String[] suggestions = spellChecker.suggestSimilar(phrase, numSuggestions);
+        // Spellchecker: create and use in try-with-resources to avoid leaks
+        String[] suggestions;
+        try (Directory spellIndexDir = FSDirectory.open(Paths.get("src/test/dictionaryIndex"));
+             SpellChecker spellChecker = new SpellChecker(spellIndexDir);
+             Directory mainIndexDir = FSDirectory.open(Paths.get(tester.getExactIndexDir()));
+             IndexReader indexReader = DirectoryReader.open(mainIndexDir);
+             StandardAnalyzer standardAnalyzer = new StandardAnalyzer()) {
+            spellChecker.indexDictionary(new LuceneDictionary(indexReader, LuceneConstants.CONTENTS), new IndexWriterConfig(standardAnalyzer), true);
+            int numSuggestions = 5;
+            suggestions = spellChecker.suggestSimilar(phrase, numSuggestions);
+            
+            // Results for exact search phrase
+            LinkedHashMap<String, Double> exactResults = tester.exactWordSearch(phrase);
+            if (exactResults != null) {
+                tester.merge(finalResults, exactResults);
+                System.out.print(exactWordHits.totalHits.value() + " exact matches found ");
+                System.out.println("with bookmark tags: " + exactResults);
+            } else {
+                System.out.println("No exact matches found");
+            }
+            printSeparator('=', 75);
+
+            // Results for phonetically similar phrase
+            System.out.println("Searching for similar phonetics...");
+            LinkedHashMap<String, Double> phoneticResults = tester.phoneticSearch(phrase);
+            if (phoneticResults != null) {
+                tester.merge(finalResults, phoneticResults);
+                System.out.print(phoneticHits.totalHits.value() + " similarities found ");
+                System.out.println("with bookmark tags: " + phoneticResults);
+            }
+            printSeparator('=', 75);
+
+            // When search phrase is not found, suggest alternatives
+            if (suggestions != null && suggestions.length > 0 && !spellChecker.exist(phrase)) { // only give suggestion when search word DNE
+                System.out.println("Here are some suggestion searches:");
+                for (String current_suggestion : suggestions) {
+                    System.out.print("Suggestion results for \"" + current_suggestion + "\": ");
+                    LinkedHashMap<String, Double> similar_results = tester.exactWordSearch(current_suggestion);
+                    if (similar_results != null) {
+                        tester.merge(finalResults, similar_results);
+                        System.out.print(exactWordHits.totalHits.value() + " matches found ");
+                        System.out.println("with bookmark tags: " + similar_results);
+                    } else {
+                        System.out.println("n/a with MIN_OCCUR > " + LuceneConstants.MIN_OCCUR);
+                    }
+                    printSeparator('-', 75);
+                }
+            }
+        }
 
 
         // Process results
 
         System.out.println("Top results for phrase: \"" + phrase + "\"");
 
-        // Results for exact search phrase
-        LinkedHashMap<String, Double> exactResults = tester.exactWordSearch(phrase);
-        if (exactResults != null) {
-            tester.merge(finalResults, exactResults);
-            System.out.print(exactWordHits.totalHits.value() + " exact matches found ");
-            System.out.println("with bookmark tags: " + exactResults);
-        } else {
-            System.out.println("No exact matches found");
-        }
-        printSeparator('=', 75);
-
-        // Results for phonetically similar phrase
-        System.out.println("Searching for similar phonetics...");
-        LinkedHashMap<String, Double> phoneticResults = tester.phoneticSearch(phrase);
-        if (phoneticResults != null) {
-            tester.merge(finalResults, phoneticResults);
-            System.out.print(phoneticHits.totalHits.value() + " similarities found ");
-            System.out.println("with bookmark tags: " + phoneticResults);
-        }
-        printSeparator('=', 75);
-
-        // When search phrase is not found, this checks for fuzzy and wildcards for search phrase without using a query
-        if (suggestions != null && suggestions.length > 0 && !spellChecker.exist(phrase)) { // only give suggestion when search word DNE
-            System.out.println("Here are some suggestion searches:");
-            for (int i = 0; i < suggestions.length; i++) {
-
-                String current_suggestion = suggestions[i];
-                System.out.print("Suggestion results for \"" + current_suggestion + "\": ");
-
-                LinkedHashMap<String, Double> similar_results = tester.exactWordSearch(current_suggestion);
-                if (similar_results != null) {
-                    tester.merge(finalResults, similar_results);
-                    System.out.print(exactWordHits.totalHits.value() + " matches found ");
-                    System.out.println("with bookmark tags: " + similar_results);
-                } else {
-                    System.out.println("n/a with MIN_OCCUR > " + LuceneConstants.MIN_OCCUR);
-                }
-                printSeparator('-', 75);
-            }
-        }
-
         // print final
         finalResults = (LinkedHashMap<String, Double>) tester.sortByValue(finalResults); // sort bookmarks by score
         System.out.println("FINAL BOOKMARK TAGS w/ SCORES: " + finalResults);
-
-        spellChecker.close();
 
     }
 
@@ -146,73 +141,74 @@ public class StarWarsTester {
 
     // Calls Indexer to process JSON files content from indexDir into lucene index with phonetic filter in dataDir
     public void createExactWordIndex() throws IOException, ParseException {
-        StandardAnalyzer standardAnalyzer = new StandardAnalyzer();
-        indexer = new Indexer(indexExactWordDir, standardAnalyzer);
+        try (StandardAnalyzer standardAnalyzer = new StandardAnalyzer()) {
+            indexer = new Indexer(indexExactWordDir, standardAnalyzer);
 
-        int numIndexed;
-        long startTime = System.currentTimeMillis();
-        numIndexed = indexer.createIndex(dataDir, new JsonFileFilter());
-        long endTime = System.currentTimeMillis();
+            int numIndexed;
+            long startTime = System.currentTimeMillis();
+            numIndexed = indexer.createIndex(dataDir, new JsonFileFilter());
+            long endTime = System.currentTimeMillis();
 
-        System.out.println(numIndexed + " docs indexed");
-        System.out.println("Indexing exact content took " + (endTime - startTime) + " ms");
-        printSeparator('*', 75);
+            System.out.println(numIndexed + " docs indexed");
+            System.out.println("Indexing exact content took " + (endTime - startTime) + " ms");
+            printSeparator('*', 75);
 
-        indexer.close();
+            indexer.close();
+        }
     }
 
     // Calls Indexer to process JSON files content from indexDir into lucene index with phonetic filter in dataDir
     public void createPhoneticIndex() throws IOException, ParseException {
-        MyPhoneticAnalyzer phoneticAnalyzer = new MyPhoneticAnalyzer();
-        indexer = new Indexer(indexPhoneticDir, phoneticAnalyzer);
+        try (MyPhoneticAnalyzer phoneticAnalyzer = new MyPhoneticAnalyzer()) {
+            indexer = new Indexer(indexPhoneticDir, phoneticAnalyzer);
 
-        int numIndexed;
-        long startTime = System.currentTimeMillis();
-        numIndexed = indexer.createIndex(dataDir, new JsonFileFilter());
-        long endTime = System.currentTimeMillis();
+            int numIndexed;
+            long startTime = System.currentTimeMillis();
+            numIndexed = indexer.createIndex(dataDir, new JsonFileFilter());
+            long endTime = System.currentTimeMillis();
 
-        System.out.println(numIndexed + " docs indexed");
-        System.out.println("Indexing phonetics took " + (endTime - startTime) + " ms");
-        printSeparator('*', 75);
+            System.out.println(numIndexed + " docs indexed");
+            System.out.println("Indexing phonetics took " + (endTime - startTime) + " ms");
+            printSeparator('*', 75);
 
-        indexer.close();
+            indexer.close();
+        }
     }
 
 
     // Creates query based on exact phrase; returns found bookmark tags and total scores per tag
     public LinkedHashMap<String, Double> exactWordSearch(String phrase) throws IOException {
         long startTime = System.currentTimeMillis();
-
-        Searcher searcherExact = new Searcher(indexExactWordDir);
-        Query query = searcherExact.createBooleanQuery(phrase, false); // here we can choose what type of Query to create
-        exactWordHits = searcherExact.search(query);
-        if (exactWordHits == null) {
-            return null;
+        LinkedHashMap<String, Double> result;
+        try (Searcher searcherExact = new Searcher(indexExactWordDir)) {
+            Query query = searcherExact.createBooleanQuery(phrase, false); // here we can choose what type of Query to create
+            exactWordHits = searcherExact.search(query);
+            if (exactWordHits.totalHits.value() < LuceneConstants.MIN_OCCUR) {
+                return null;
+            }
+            result = searcherExact.getBookmarks(exactWordHits);
         }
-
         long endTime = System.currentTimeMillis();
 
         System.out.println("Searching took " + (endTime - startTime) + " ms");
-
-        return searcherExact.getBookmarks(exactWordHits);
+        return result;
     }
 
     // Creates query based on phonetics of a phrase; returns found bookmark tags IDs and total scores per tag
     public LinkedHashMap<String, Double> phoneticSearch(String phrase) throws IOException {
         long startTime = System.currentTimeMillis();
-
-        Searcher searcher = new Searcher(indexPhoneticDir);
-        Query query = searcher.createBooleanQuery(phrase, true); // here we can choose what type of Query to create
-        phoneticHits = searcher.search(query);
-
-        if (phoneticHits == null) {
-            return null;
+        LinkedHashMap<String, Double> result;
+        try (Searcher searcher = new Searcher(indexPhoneticDir)) {
+            Query query = searcher.createBooleanQuery(phrase, true); // here we can choose what type of Query to create
+            phoneticHits = searcher.search(query);
+            if (phoneticHits.totalHits.value() < LuceneConstants.MIN_OCCUR) {
+                return null;
+            }
+            result = searcher.getBookmarks(phoneticHits);
         }
-
         long endTime = System.currentTimeMillis();
         System.out.println("Searching took " + (endTime - startTime) + " ms");
-
-        return searcher.getBookmarks(phoneticHits);
+        return result;
     }
 
 // Methods for map organization
@@ -236,7 +232,7 @@ public class StarWarsTester {
         List<Map.Entry<String, Double>> entries =
                 new ArrayList<Map.Entry<String, Double>>(map.entrySet());
         entries.sort((a, b) -> b.getValue().compareTo(a.getValue()));
-        Map<String, Double> sortedMap = new LinkedHashMap<String, Double>();
+        Map<String, Double> sortedMap = new LinkedHashMap<>();
         for (Map.Entry<String, Double> entry : entries) {
             sortedMap.put(entry.getKey(), entry.getValue());
         }

@@ -20,7 +20,7 @@ import java.nio.file.Paths;
 // This class performs lucene indexing for a JSON file
 public class Indexer {
     private final IndexWriter writer;
-    private String current_procedure_id = "";
+    private String bookmarkTag = "";
 
     // Initialize writer
     public Indexer(String indexDirectoryPath, Analyzer analyzer) throws IOException {
@@ -80,49 +80,57 @@ public class Indexer {
 
     // This method will parse a single json object -- process and add fields to a new lucene doc (indexing)
     private void parseJsonObject(JSONObject jsonObject, File file) throws IOException, ParseException {
+        // Create a new document and add universal fields first
         Document d = createLuceneDocument(file);
+
+
         for (Object key : jsonObject.keySet()) {
             String fieldName = (String) key;
             Object fieldValue = jsonObject.get(fieldName);
 
-            if(fieldName.equals(LuceneConstants.BOOKMARK_TAG )) {
-                current_procedure_id = (String) fieldValue;
+            if (LuceneConstants.BOOKMARK_TAG.equals(fieldName) && fieldValue instanceof String) {
+                System.out.println(bookmarkTag);
+                bookmarkTag = (String) fieldValue;
             }
+            // add bookmark tag after collected
+            d.add(new StringField(LuceneConstants.BOOKMARK_TAG, bookmarkTag, Field.Store.YES));
 
             // create fields based on type and add to document
             Class<?> fieldType = fieldValue.getClass();
-            if(fieldType.equals(String.class)) {
-                if(fieldName.equals(LuceneConstants.CONTENTS)) {
+            if (fieldType.equals(String.class)) {
+                if (fieldName.equals(LuceneConstants.CONTENTS)) {
                     d.add(new TextField(fieldName, (String) fieldValue, Field.Store.YES));
-                }
-                else{
+                } else {
                     d.add(new StringField(fieldName, (String) fieldValue, Field.Store.YES));
                 }
             }
-            else if(fieldType.equals(Long.class)) {
-                d.add(new LongField(fieldName, (long) fieldValue, Field.Store.YES));
+            else if (fieldType.equals(Long.class)) {
+                // Index numeric value and also store it for retrieval
+                d.add(new LongPoint(fieldName, (Long) fieldValue));
+                d.add(new StoredField(fieldName, (Long) fieldValue));
             }
-            else if(fieldType.equals(Double.class)) {
-                d.add(new DoubleField(fieldName, (double) fieldValue, Field.Store.YES));
+            else if (fieldType.equals(Double.class)) {
+                d.add(new DoublePoint(fieldName, (Double) fieldValue));
+                d.add(new StoredField(fieldName, (Double) fieldValue));
             }
-            else if(fieldType.equals(Boolean.class)) {
+            else if (fieldType.equals(Boolean.class)) {
                 d.add(new StringField(fieldName, fieldValue.toString(), Field.Store.YES));
             }
 
-            parseJsonElement(fieldValue, file); // recursive call
-        } // end of adding fields
+            // recursive call into nested objects/arrays
+            parseJsonElement(fieldValue, file);
+        }
+
+
         writer.addDocument(d);
     }
 
-    // This private method creates a lucene doc and add universal fields (for our JSON files, file name, path, and procedure ID)
+    // This private method creates a lucene doc and add universal fields (for our JSON files, file name, path, and bookmark tag)
     private Document createLuceneDocument(File file) throws IOException {
+        // Deprecated: kept for compatibility if referenced elsewhere; prefer inline creation above.
         Document document = new Document();
-        Field filenameField = new StringField(LuceneConstants.FILE_NAME, file.getName(), Field.Store.YES);
-        Field filepathField = new StringField(LuceneConstants.FILE_PATH, file.getCanonicalPath(), Field.Store.YES);
-        Field procedureIDField = new StringField(LuceneConstants.BOOKMARK_TAG, current_procedure_id, Field.Store.YES);
-        document.add(filenameField);
-        document.add(filepathField);
-        document.add(procedureIDField);
+        document.add(new StringField(LuceneConstants.FILE_NAME, file.getName(), Field.Store.YES));
+        document.add(new StringField(LuceneConstants.FILE_PATH, file.getCanonicalPath(), Field.Store.YES));
         return document;
     }
 }
