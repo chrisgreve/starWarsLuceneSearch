@@ -9,8 +9,8 @@ import org.apache.lucene.index.Term;
 import org.apache.lucene.sandbox.search.PhraseWildcardQuery;
 import org.apache.lucene.search.*;
 import org.apache.lucene.store.FSDirectory;
-import org.apache.lucene.util.QueryBuilder;
 
+import java.io.Closeable;
 import java.io.IOException;
 import java.io.StringReader;
 import java.nio.file.Paths;
@@ -20,26 +20,17 @@ import java.util.Map;
 import java.util.Set;
 
 // This is the main searcher class that look for results both exact and similar in phonetics
-public class Searcher {
-    IndexSearcher indexSearcher;
-    QueryBuilder queryBuilder;
-    MyPhoneticAnalyzer phoneticAnalyzer;
+public class Searcher implements Closeable {
+    private final IndexSearcher indexSearcher;
+    private final DirectoryReader reader;
 
     public Searcher(String indexDirectoryPath) throws IOException {
-        DirectoryReader indexDirectory = DirectoryReader.open(FSDirectory.open(Paths.get(indexDirectoryPath)));
-        indexSearcher = new IndexSearcher(indexDirectory);
-        phoneticAnalyzer = new MyPhoneticAnalyzer();
-        queryBuilder = new QueryBuilder(phoneticAnalyzer);
+        this.reader = DirectoryReader.open(FSDirectory.open(Paths.get(indexDirectoryPath)));
+        this.indexSearcher = new IndexSearcher(reader);
     }
 
     public TopDocs search(Query query) throws IOException {
-        TopDocs hits = indexSearcher.search(query, LuceneConstants.MAX_SEARCH);
-        int numHits = (int) hits.totalHits.value();
-        if (numHits < LuceneConstants.MIN_OCCUR) {
-            return null;
-//            System.out.println("No significant hits found (Min occur must be > " +  LuceneConstants.MIN_OCCUR + ")");
-        }
-        return hits;
+        return indexSearcher.search(query, LuceneConstants.MAX_SEARCH);
     }
 
     public Document getDocument(ScoreDoc scoreDoc) throws IOException {
@@ -71,20 +62,18 @@ public class Searcher {
     }
 
 
-    // This method analyzes a given query term to get its phonetic form
+    // This method analyzes a given query term to get its phonetic form (first token)
     private String getPhoneticTerm(String queryTerm) {
         String phoneticTerm = "";
-        // Analyze the query term to get its phonetic form
-        try (MyPhoneticAnalyzer analyzer = new MyPhoneticAnalyzer()) {
-            try (TokenStream stream = analyzer.tokenStream(LuceneConstants.CONTENTS, new StringReader(queryTerm))) {
-                CharTermAttribute charTermAttr = stream.addAttribute(CharTermAttribute.class);
-                stream.reset();
-                if (stream.incrementToken()) {
-                    phoneticTerm = charTermAttr.toString();
-                }
-            } catch (IOException e) {
-                throw new RuntimeException(e);
+        try (MyPhoneticAnalyzer analyzer = new MyPhoneticAnalyzer();
+             TokenStream stream = analyzer.tokenStream(LuceneConstants.CONTENTS, new StringReader(queryTerm))) {
+            CharTermAttribute charTermAttr = stream.addAttribute(CharTermAttribute.class);
+            stream.reset();
+            if (stream.incrementToken()) {
+                phoneticTerm = charTermAttr.toString();
             }
+        } catch (IOException e) {
+            throw new RuntimeException(e);
         }
         return phoneticTerm;
     }
@@ -99,7 +88,6 @@ public class Searcher {
             phraseQuery = createExactPhraseQuery(phrase);
         } else {
             phraseQuery = createPhoneticPhraseQuery(phrase);
-            phrase = getPhoneticTerm(phrase); // convert phrase to a phonetic phrase
         }
 
         // check for fuzzy
@@ -131,42 +119,33 @@ public class Searcher {
     }
 
     public Query createExactPhraseQuery(String phrase) throws IOException {
-        StandardAnalyzer standardAnalyzer = new StandardAnalyzer();
         PhraseQuery.Builder builder = new PhraseQuery.Builder();
-        TokenStream tokenStream = standardAnalyzer.tokenStream(
-                LuceneConstants.CONTENTS, new StringReader(phrase));
-        CharTermAttribute term = tokenStream.addAttribute(CharTermAttribute.class);
-        tokenStream.reset();
-
-        while (tokenStream.incrementToken()) {
-            builder.add(new Term(LuceneConstants.CONTENTS, term.toString()));
-//            System.out.print("[" + term + "] ");
+        try (StandardAnalyzer standardAnalyzer = new StandardAnalyzer();
+             TokenStream tokenStream = standardAnalyzer.tokenStream(
+                     LuceneConstants.CONTENTS, new StringReader(phrase))) {
+            CharTermAttribute term = tokenStream.addAttribute(CharTermAttribute.class);
+            tokenStream.reset();
+            while (tokenStream.incrementToken()) {
+                builder.add(new Term(LuceneConstants.CONTENTS, term.toString()));
+            }
         }
-//        printSeparator('-', 75);
-
-        standardAnalyzer.close();
-
         builder.setSlop(LuceneConstants.PHRASE_QUERY_SLOP); // default to 2
         return createBoostQuery(builder.build()); // this returns a PhraseQuery instance
     }
 
     public PhraseQuery createPhoneticPhraseQuery(String phrase) throws IOException {
         PhraseQuery.Builder builder = new PhraseQuery.Builder();
-        TokenStream tokenStream = phoneticAnalyzer.tokenStream(
-                LuceneConstants.CONTENTS, new StringReader(phrase));
-        CharTermAttribute term = tokenStream.addAttribute(CharTermAttribute.class);
-        tokenStream.reset();
-
-        while (tokenStream.incrementToken()) {
-            builder.add(new Term(LuceneConstants.CONTENTS, getPhoneticTerm(term.toString())));
-            System.out.print("[" + term + "] ");
+        try (MyPhoneticAnalyzer analyzer = new MyPhoneticAnalyzer();
+             TokenStream tokenStream = analyzer.tokenStream(
+                     LuceneConstants.CONTENTS, new StringReader(phrase))) {
+            CharTermAttribute term = tokenStream.addAttribute(CharTermAttribute.class);
+            tokenStream.reset();
+            while (tokenStream.incrementToken()) {
+                // tokens produced are already phonetic representations
+                builder.add(new Term(LuceneConstants.CONTENTS, term.toString()));
+            }
         }
-        printSeparator('-', 75);
-
-        phoneticAnalyzer.close();
-
         builder.setSlop(LuceneConstants.PHRASE_QUERY_SLOP);
-
         return builder.build(); // return PhraseQuery instance
     }
 
@@ -222,4 +201,8 @@ public class Searcher {
     }
 
 
+    @Override
+    public void close() throws IOException {
+        reader.close();
+    }
 }
